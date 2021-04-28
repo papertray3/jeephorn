@@ -8,43 +8,66 @@ import os
 from signal import pause
 
 BUTTONS = config('PYHORN_BUTTONS', cast=lambda v: [s.strip() for s in v.split(',')])
+ENABLE_SWITCH = config('PYHORN_ENABLE', default=None)
 INTERFACE = config('PYHORN_INTERFACE')
 STARTUP = config('PYHORN_STARTUP', default=None)
 VOLUME = config('PYHORN_VOLUME', default=0.5, cast=float)
 
 logging.basicConfig(level=logging.INFO)
 logging.info(f'Using interface at {INTERFACE}')
-
-#_MODE = 0o750
+if ENABLE_SWITCH:
+    logging.info(f'Found enable switch at')
+    enable = gpiozero.Button(ENABLE_SWITCH)
+    enable.when_held = lambda: logging.info('System Enabled')
+    enable.when_released = lambda: logging.info('System Disabled')
+else:
+    logging.info(f'No enable switch found')
 
 pygame.mixer.init()
 
+def testit():
+    logging.info("Boom")
 
+def getPath(label):
+    return os.path.join(INTERFACE, label, label)
 
-## Make Interface (doesn't really need to be here)
+def getPlayFunc(path, sound):
 
-# for button in BUTTONS:
-#     path = os.path.join(INTERFACE, button)
-#     os.makedirs(path, mode = _MODE, exist_ok=True)
+    # Create funciton to check enable switch (could be lambda but eh)
+    def playFunc():
+        if (ENABLE_SWITCH and enable.is_active) or ENABLE_SWITCH == None:
+            logging.info(f'Playing sound at: {path}')
+            sound.play()
+        else:
+            logging.info(f'Sound requested for {path}, but system disabled')
+    
+    return playFunc
 
-# if STARTUP:
-#     path = os.path.join(INTERFACE, STARTUP)
-#     os.makedirs(path, mode=_MODE, exist_ok=True)
-
-for blabel in BUTTONS:
-    path = os.path.join(INTERFACE, blabel, blabel)
-    logging.info(f'Matching button {blabel} with sound at {path}')
+def createSound(path):
     sound = pygame.mixer.Sound(path)
     sound.set_volume(VOLUME)
-    button = gpiozero.Button(blabel)
-    button.when_pressed = sound.play
+    return sound
+
+def createButtonWithSound(button_label):
+    path = getPath(button_label)
+    logging.info(f'Matching label {button_label} with sound at {path}')
+    sound = createSound(path)
+    button = gpiozero.Button(button_label)
+
+    button.when_pressed = getPlayFunc(path, sound)
+    return button
+
+
+
+for blabel in BUTTONS:
+    button = createButtonWithSound(blabel)
 
 if STARTUP:
-    path = os.path.join(INTERFACE, STARTUP, STARTUP)
-    logging.info(f'Playing startup sound at {path}')
-    startSound = pygame.mixer.Sound(path)
-    startSound.set_volume(VOLUME)
-    startSound.play()
+    path = getPath(STARTUP)
+    logging.info(f'Creating startup sound from {path}')
+    startSound = getPlayFunc(path, createSound(path))
+    startSound()
+    
 
 pause()
     
